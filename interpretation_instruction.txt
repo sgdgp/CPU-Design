@@ -1,0 +1,709 @@
+*************************************** ASSIGNMENT 13 ***************************************************
+										-------------
+Group No: 4
+Members:
+1. Ashrujit Ghoshal(14CS10060) 
+2. Sayan Ghosh(14CS10061) 
+
+>>AIM:
+------
+Interpretation of instructions over datapath
+
+
+>>Stages of Multicycle Implementation:
+--------------------------------------
+1. Instruction Fetch (IF)
+2. Instruction Decode (ID)
+3. Next Word Fetch (NWF)
+4. Execution Stage 1 (EX1)
+5. Execution Stage 2 (EX2)
+6. Memory Stage 1 (Mem1)
+7. Memory Stage 2 (Mem2)
+8. Execution Stage 3 (EX3)
+9. Write Back (WB)
+
+
+>>Brief Overview of Different Stages:
+-------------------------------------
+1.Instrcution Fetch Stage
+-------------------------
+The Instruction Fetch Stage is the same for all instructions.
+IR = Mem[PC]
+PC = PC + 2
+
+2.Instruction Decode Stage
+--------------------------
+The Instruction Decode Stage is also the same for all instructions.
+A = Reg[IR[5-3]]
+B = Reg[IR[2-0]]
+
+3.Next Word Fetch Stage
+-----------------------
+We added the NWF Stage to store the next word in the NWR Register in case the instruction size is of 32 bits. (NWR = Mem[PC])
+PC is incremented by 2 to point to the next instruction in this stage.(PC = PC + 2)
+
+4.Execution Stage 1 (EX 1)
+--------------------------
+In the execution stage 1 we usually perform an ALU operation. 
+
+5.Execution Stage 2 (EX 2)
+--------------------------
+We added a second execution stage as we sometimes need to perform more than one ALU operation.
+Also if in case the destination register is used as an operand, then we use this stage to fetch register information from Instruction Register (IR).
+
+For example, let us consider the instruction lx r5, 10(r1, r7).
+Now we need to store r5 <-- M[r1 + r7 + 10].
+Now r1 + 10 is calculated in EX1 and then the result is added to r7 in EX2.
+
+6.Memory Stage 1 (Mem 1)
+------------------------
+The memory stage is used to memory accesses particularly in load type instructions.
+
+7.Memory Stage 2 (Mem 2)
+------------------------
+The memory stage 2 is used for indirect addressing modes where we need to find the value of Mem[Mem[some addr]].
+For example, ldn r5, @10(r1, r7).
+
+8.Execution Stage 3 (Mem 3)
+---------------------------
+This execution stage has been added to account for the fact that for some instructions the desination register becomes the operand.
+For example, let us consider the instruction subn r4, @-120(r2, r6). In this example, we need to put r4 <- r4 - M(M(r2 + r6 - 120)).
+r2 + r6 -120 can be calculated in stages EX1 and EX2. Then further, M(M(r2 + r6 - 120)) has been calculated in Mem1 and Mem2.
+Now to find r4 - M(M(r2 + r6 - 120)) we added this execution stage.
+
+9.Write Back (WB)
+-----------------
+In the write back stage, we write the value of the final output back to the register.
+
+
+>>RTL Microinstructions for different instructions:
+---------------------------------------------------
+
+>Load Instructions
+------------------
+
+-->li r5, #100
+...............
+
+IF
+--
+IR = Mem[PC]
+PC = PC + 2
+
+ID
+--
+A = Reg[IR[5-3]]
+B = Reg[IR[2-0]]
+
+NWF
+---
+NWR = Mem[PC]
+PC = PC + 2
+
+WB
+--
+Reg[IR[11-9]] = NWR
+
+
+-->lr r5,r7
+...........
+
+IF
+--
+IR = Mem[PC]
+PC = PC + 2
+
+ID
+--
+A = Reg[IR[5-3]]
+B = Reg[IR[2-0]]
+
+WB
+--
+Reg[IR[11-9]] = A
+
+
+-->lx r5, 10(r1, r7)
+....................
+
+IF
+--
+IR = Mem[PC]
+PC = PC + 2
+
+ID
+--
+A = Reg[IR[5-3]]
+B = Reg[IR[2-0]]
+
+NWF
+---
+NWR = Mem[PC]
+PC = PC + 2
+
+EX1
+---
+ALUOut = A + NWR
+
+EX2
+---
+ALUOut = ALUOut + B
+
+Mem1
+----
+MDR = Mem[ALUOut]
+
+WB
+--
+Reg[IR[11-9]] = MDR
+
+
+--> ldn r5, @10(r1, r7)
+.......................
+
+IF
+--
+IR = Mem[PC]
+PC = PC + 2
+
+ID
+--
+A = Reg[IR[5-3]]
+B = Reg[IR[2-0]]
+
+NWF
+---
+NWR = Mem[PC]
+PC = PC + 2
+
+EX1
+---
+ALUOut = A + NWR
+
+EX2
+---
+ALUOut = ALUOut + B
+
+Mem1
+----
+MDR = Mem[ALUOut]
+
+Mem2
+---
+MDR - Mem[MDR]
+
+WB
+--
+Reg[IR[11-9]] = MDR
+
+
+>Store Instructions
+-------------------
+
+-->stx -5(r2), r3
+.................
+
+IF
+--
+IR = Mem[PC]
+PC = PC + 2
+
+ID
+--
+A = Reg[IR[5-3]]
+B = Reg[IR[2-0]]
+
+NWF
+---
+NWR = Mem[PC]
+PC = PC + 2
+
+EX1
+---
+ALUOut = A + NWR
+
+Mem1
+----
+Mem[ALUOut] = B
+
+-->stn @-5(r2), r3
+..................
+
+IF
+--
+IR = Mem[PC]
+PC = PC + 2
+
+ID
+--
+A = Reg[IR[5-3]]
+B = Reg[IR[2-0]]
+
+NWF
+---
+NWR = Mem[PC]
+PC = PC + 2
+
+EX1
+---
+ALUOut = A + NWR
+
+Mem1
+----
+MDR = Mem[ALUOut]
+
+Mem2
+----
+Mem[MDR] = B
+
+
+ALU Operations
+--------------
+
+-->addi r1, #43
+...............
+
+IF
+--
+IR = Mem[PC]
+PC = PC + 2
+
+ID
+--
+A = Reg[IR[5-3]]
+B = Reg[IR[2-0]]
+
+NWF
+---
+NWR = Mem[PC]
+PC = PC + 2
+
+EX2
+---
+A = Reg[IR[11-9]]
+
+EX3
+---
+ALUOut = A + NWR
+
+WB
+--
+Reg[IR[11-9]] = ALUOut
+
+
+-->subn r4, @-120(r2, r6)
+..........................
+
+IF
+--
+IR = Mem[PC]]
+PC = PC + 2
+
+ID
+--
+A = Reg[IR[5-3]]
+B = Reg[IR[2-0]]
+
+NWF
+---
+NWR = Mem[PC]
+PC = PC + 2
+
+EX1
+---
+ALUOut = A + NWR
+
+EX2
+---
+A = Reg[IR[11-9]]
+ALUOut = ALUOut + B
+
+Mem1
+----
+MDR = Mem[ALUOut]
+
+Mem2
+----
+MDR = Mem[MDR]
+
+EX3
+---
+ALUOut = A op MDR
+
+WB
+--
+Reg[IR[11-9]] = ALUOut
+
+
+
+
+
+
+
+
+-->mnsr	r2, r6	
+..........................
+
+IF
+--
+IR = Mem[PC]]
+PC = PC + 2
+
+ID
+--
+A = Reg[IR[5-3]]
+B = Reg[IR[2-0]]
+
+NWF
+---
+NWR = Mem[PC]
+PC = PC + 2
+
+EX1
+---
+ALUOut = A + NWR
+
+EX2
+---
+A = Reg[IR[11-9]]
+ALUOut = ALUOut + B
+
+Mem1
+----
+MDR = Mem[ALUOut]
+
+
+
+EX3
+---
+ALUOut = A op MDR
+
+WB
+--
+Reg[IR[11-9]] = ALUOut
+
+
+
+-->cmp r3
+.........
+
+IF
+--
+IR = Mem[PC]
+PC = PC + 2
+
+ID
+--
+A = Reg[IR[5-3]]
+B = Reg[IR[2-0]]
+
+EX2
+---
+A = Reg[IR[11-9]]
+ALUOut = op A
+
+WB
+--
+Reg[IR[11-9]] = ALUOut
+
+
+Jump Instructions
+-----------------
+
+-->j addr
+.........
+
+IF
+--
+IR = Mem[PC]
+PC = PC + 2
+
+ID
+--
+A = Reg[IR[5-3]]
+B = Reg[IR[2-0]]
+
+NWF
+---
+NWR = Mem[PC]
+PC = PC + 2
+
+EX1
+---
+ALUOut = PC + NWR
+
+EX2
+---
+PC = ALUOut
+
+
+-->jz addr
+..........
+
+IF
+--
+IR = Mem[PC]
+PC = PC + 2
+
+ID
+--
+A = Reg[IR[5-3]]
+B = Reg[IR[2-0]]
+
+NWF
+---
+NWR = Mem[PC]
+PC = PC + 2
+
+EX1
+---
+ALUOut = PC + NWR
+
+EX2
+---
+if(Z) PC = ALUOut
+
+
+-->jnz addr
+..........
+
+IF
+--
+IR = Mem[PC]
+PC = PC + 2
+
+ID
+--
+A = Reg[IR[5-3]]
+B = Reg[IR[2-0]]
+
+NWF
+---
+NWR = Mem[PC]
+PC = PC + 2
+
+EX1
+---
+ALUOut = PC + NWR
+
+EX2
+---
+if(not Z) PC = ALUOut
+
+-->jc addr
+..........
+
+IF
+--
+IR = Mem[PC]
+PC = PC + 2
+
+ID
+--
+A = Reg[IR[5-3]]
+B = Reg[IR[2-0]]
+
+NWF
+---
+NWR = Mem[PC]
+PC = PC + 2
+
+EX1
+---
+ALUOut = PC + NWR
+
+EX2
+---
+if(C) PC = ALUOut
+
+
+-->jnc addr
+..........
+
+IF
+--
+IR = Mem[PC]
+PC = PC + 2
+
+ID
+--
+A = Reg[IR[5-3]]
+B = Reg[IR[2-0]]
+
+NWF
+---
+NWR = Mem[PC]
+PC = PC + 2
+
+EX1
+---
+ALUOut = PC + NWR
+
+EX2
+---
+if(not C) PC = ALUOut
+
+
+-->jv addr
+..........
+
+IF
+--
+IR = Mem[PC]
+PC = PC + 2
+
+ID
+--
+A = Reg[IR[5-3]]
+B = Reg[IR[2-0]]
+
+NWF
+---
+NWR = Mem[PC]
+PC = PC + 2
+
+EX1
+---
+ALUOut = PC + NWR
+
+EX2
+---
+if(overflow) PC = ALUOut
+
+
+-->jnv addr
+..........
+
+IF
+--
+IR = Mem[PC]
+PC = PC + 2
+
+ID
+--
+A = Reg[IR[5-3]]
+B = Reg[IR[2-0]]
+
+NWF
+---
+NWR = Mem[PC]
+PC = PC + 2
+
+EX1
+---
+ALUOut = PC + NWR
+
+EX2
+---
+if(not overflow) PC = ALUOut
+
+-->jm addr
+..........
+
+IF
+--
+IR = Mem[PC]
+PC = PC + 2
+
+ID
+--
+A = Reg[IR[5-3]]
+B = Reg[IR[2-0]]
+
+NWF
+---
+NWR = Mem[PC]
+PC = PC + 2
+
+EX1
+---
+ALUOut = PC + NWR
+
+EX2
+---
+if(S) PC = ALUOut
+
+
+-->jnm addr
+..........
+
+IF
+--
+IR = Mem[PC]
+PC = PC + 2
+
+ID
+--
+A = Reg[IR[5-3]]
+B = Reg[IR[2-0]]
+
+NWF
+---
+NWR = Mem[PC]
+PC = PC + 2
+
+EX1
+---
+ALUOut = PC + NWR
+
+EX2
+---
+if(not S) PC = ALUOut
+
+
+Subroutine Calls
+----------------
+
+-->jal r5, sub
+..............
+
+IF
+--
+IR = Mem[PC]
+PC = PC + 2
+
+ID
+--
+A = Reg[IR[5-3]]
+B = Reg[IR[2-0]]
+
+NWF
+---
+NWR = Mem[PC]
+PC = PC + 2
+
+EX1
+---
+ALUOut = PC + NWR
+
+EX2
+---
+PC = ALUOut
+
+WB
+--
+Reg[IR[11-9]] = PC
+
+
+-->jr r5
+.........
+
+IF
+--
+IR = Mem[PC]
+PC = PC + 2
+
+ID
+--
+A = Reg[IR[5-3]]
+B = Reg[IR[2-0]]
+
+EX2
+---
+A = Reg[IR[11-9]]
+
+WB
+--
+PC = A
+
+
